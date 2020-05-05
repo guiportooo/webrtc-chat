@@ -9,6 +9,7 @@ import {
   Button,
 } from "semantic-ui-react";
 import SweetAlert from "react-bootstrap-sweetalert";
+import Users from "./Users";
 
 const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
   const webSocket = useRef(null);
@@ -19,6 +20,9 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
   const [name, setName] = useState("");
   const [loggingIn, setLoggingIn] = useState(false);
   const [users, setUsers] = useState([]);
+  const [connectedTo, setConnectedTo] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const connectedRef = useRef();
 
   const closeAlert = () => {
     setAlert(null);
@@ -38,7 +42,7 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
 
   const onLogin = ({ success, message, users: loggedIn }) => {
     setLoggingIn(false);
-    if (!success) {
+    if (success) {
       setAlert(
         <SweetAlert
           success
@@ -63,6 +67,21 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
           {message}
         </SweetAlert>
       );
+    }
+  };
+
+  const toggleConnection = (userName) => {
+    if (connectedRef.current === userName) {
+      setConnecting(true);
+      setConnectedTo("");
+      connectedRef.current = "";
+      setConnecting(false);
+    } else {
+      setConnecting(true);
+      setConnecting(userName);
+      connectedRef.current = userName;
+      //handleConnection(userName);
+      setConnecting(false);
     }
   };
 
@@ -130,6 +149,14 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
                 </Segment>
               )}
             </Grid.Column>
+          </Grid>
+          <Grid>
+            <Users
+              users={users}
+              toggleConnection={toggleConnection}
+              connectedTo={connectedTo}
+              connecting={connecting}
+            ></Users>
           </Grid>
         </Fragment>
       )) || (
