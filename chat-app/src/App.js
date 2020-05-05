@@ -1,26 +1,37 @@
-import React from 'react';
-import logo from './logo.svg';
-import './App.css';
+import React, { useState, createContext } from "react";
+import Container from "./Container";
 
-function App() {
+const ConnectionContext = createContext({
+  connection: null,
+  updateConnection: () => {},
+});
+
+const ChannelContext = createContext({
+  channel: null,
+  updateChannel: () => {},
+});
+
+const App = () => {
+  const [connection, setConnection] = useState(null);
+  const [channel, setChannel] = useState(null);
+
+  const updateConnection = (conn) => {
+    setConnection(conn);
+  };
+
+  const updateChannel = (chn) => {
+    setChannel(chn);
+  };
+
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <ConnectionContext.Provider value={{ connection, updateConnection }}>
+      <ChannelContext.Provider value={{ channel, updateChannel }}>
+        <Container />
+      </ChannelContext.Provider>
+    </ConnectionContext.Provider>
   );
-}
+};
 
+export const ConnectionConsumer = ConnectionContext.Consumer;
+export const ChannelConsumer = ChannelContext.Consumer;
 export default App;
