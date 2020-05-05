@@ -43,7 +43,7 @@ wss.on("connection", (ws) => {
       data = {};
     }
 
-    const { type, name, offer, answer } = data;
+    const { type, name, offer, answer, candidate } = data;
     // Handle message by type
     switch (type) {
       // When a user tries to login
@@ -102,12 +102,34 @@ wss.on("connection", (ws) => {
           });
         }
         break;
+      case "candidate":
+        //Check if user to send candidate exists
+        const candidateRecipient = users[name];
+        if (!!candidateRecipient) {
+          sendTo(candidateRecipient, {
+            type: "candidate",
+            candidate,
+          });
+        } else {
+          sendTo(ws, {
+            type: "error",
+            message: `User ${name} does not exist!`,
+          });
+        }
+        break;
+      case "logout":
+        sendToAll(users, "logout", ws);
+        break;
       default:
         sendTo(ws, {
           type: "error",
           message: `Command not found: ${type}`,
         });
     }
+  });
+  ws.on("close", () => {
+    delete users[ws.name];
+    sendToAll(users, "logout", ws);
   });
   // Send immediate feedback to the incoming connection
   ws.send(
