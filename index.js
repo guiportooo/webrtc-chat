@@ -43,7 +43,7 @@ wss.on("connection", (ws) => {
       data = {};
     }
 
-    const { type, name } = data;
+    const { type, name, offer, answer } = data;
     // Handle message by type
     switch (type) {
       // When a user tries to login
@@ -69,6 +69,37 @@ wss.on("connection", (ws) => {
             users: loggedIn,
           });
           sendToAll(users, "updateUsers", ws);
+        }
+        break;
+      case "offer":
+        //Check if user to send offer exists
+        const offerRecipient = users[name];
+        if (!!offerRecipient) {
+          sendTo(offerRecipient, {
+            type: "offer",
+            offer,
+            name: ws.name,
+          });
+        } else {
+          sendTo(ws, {
+            type: "error",
+            message: `User ${name} does not exist!`,
+          });
+        }
+        break;
+      case "answer":
+        //Check if user to send answer exists
+        const answerRecipient = users[name];
+        if (!!answerRecipient) {
+          sendTo(answerRecipient, {
+            type: "answer",
+            answer,
+          });
+        } else {
+          sendTo(ws, {
+            type: "error",
+            message: `User ${name} does not exist!`,
+          });
         }
         break;
       default:
