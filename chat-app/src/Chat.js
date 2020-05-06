@@ -9,7 +9,9 @@ import {
   Button,
 } from "semantic-ui-react";
 import SweetAlert from "react-bootstrap-sweetalert";
+import { format } from "date-fns";
 import Users from "./Users";
+import MessageBox from "./MessageBox";
 
 const configuration = {
   iceServers: [{ url: "stun:stun.1.google.com:19302" }],
@@ -27,11 +29,63 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
   const [connectedTo, setConnectedTo] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [messages, setMessages] = useState({});
+  const [message, setMessage] = useState("");
   const connectedRef = useRef();
   const messagesRef = useRef();
 
+  useEffect(() => {
+    webSocket.current = new WebSocket("ws://localhost:9000");
+    webSocket.current.onmessage = (message) => {
+      const data = JSON.parse(message.data);
+      setSocketMessages((prev) => [...prev, data]);
+    };
+    webSocket.current.onclose = () => {
+      webSocket.current.close();
+    };
+    return () => webSocket.current.close();
+  }, []);
+
+  useEffect(() => {
+    let data = socketMessages.pop();
+    if (data) {
+      switch (data.type) {
+        case "connect":
+          setSocketOpened(true);
+          break;
+        case "login":
+          onLogin(data);
+          break;
+        case "updateUsers":
+          updateUsers(data);
+          break;
+        case "removeUser":
+          removeUser(data);
+          break;
+        case "offer":
+          onOffer(data);
+          break;
+        case "answer":
+          onAnswer(data);
+          break;
+        case "candidate":
+          onCandidate(data);
+          break;
+        default:
+          break;
+      }
+    }
+  }, [socketMessages]);
+
   const closeAlert = () => {
     setAlert(null);
+  };
+
+  const updateUsers = ({ user }) => {
+    setUsers((prev) => [...prev, user]);
+  };
+
+  const removeUser = ({ user }) => {
+    setUsers((prev) => prev.filter((u) => u.userName !== user.userName));
   };
 
   const send = (data) => {
@@ -49,7 +103,7 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
   const handleDataChannelMessageReceived = ({ data }) => {
     const message = JSON.parse(data);
     const { name: user } = message;
-    let messages = messagesRef.current;
+    let messages = messagesRef.current ? messagesRef.current : {};
     let userMessages = messages[user];
     if (userMessages) {
       userMessages = [...userMessages, message];
@@ -82,6 +136,7 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
       // When the browser finds an ice candidate we send it to the other peer
       localConnection.onicecandidate = ({ candidate }) => {
         let connectedTo = connectedRef.current;
+
         if (candidate && !!connectedTo) {
           send({
             name: connectedTo,
@@ -175,6 +230,7 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
   const onOffer = ({ offer, name }) => {
     setConnectedTo(name);
     connectedRef.current = name;
+
     connection
       .setRemoteDescription(new RTCSessionDescription(offer))
       .then(() => connection.createAnswer())
@@ -206,42 +262,29 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
     connection.addIceCandidate(new RTCIceCandidate(candidate));
   };
 
-  useEffect(() => {
-    webSocket.current = new WebSocket("ws://localhost:9000");
-    webSocket.current.onmessage = (message) => {
-      const data = JSON.parse(message.data);
-      setSocketMessages((prev) => [...prev, data]);
-    };
-    webSocket.current.onclose = () => {
-      webSocket.current.close();
-    };
-    return () => webSocket.current.close();
-  }, []);
-
-  useEffect(() => {
-    let data = socketMessages.pop();
-    if (data) {
-      switch (data.type) {
-        case "connect":
-          setSocketOpened(true);
-          break;
-        case "login":
-          onLogin(data);
-          break;
-        case "offer":
-          onOffer(data);
-          break;
-        case "answer":
-          onAnswer(data);
-          break;
-        case "candidate":
-          onCandidate(data);
-          break;
-        default:
-          break;
-      }
+  const sendMessage = () => {
+    const time = format(new Date(), "yyyy-MM-dd'T'HH:mm:ss.SSSxxx");
+    let text = { time, message, name };
+    let messages = messagesRef.current ? messagesRef.current : {};
+    let connectedTo = connectedRef.current;
+    let userMessages = messages[connectedTo];
+    if (messages[connectedTo]) {
+      userMessages = [...userMessages, text];
+      let newMessages = Object.assign({}, messages, {
+        [connectedTo]: userMessages,
+      });
+      messagesRef.current = newMessages;
+      setMessages(newMessages);
+    } else {
+      userMessages = Object.assign({}, messages, {
+        [connectedTo]: [text],
+      });
+      messagesRef.current = userMessages;
+      setMessages(userMessages);
     }
-  }, [socketMessages]);
+    channel.send(JSON.stringify(text));
+    setMessage("");
+  };
 
   return (
     <div className="App">
@@ -286,7 +329,15 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
               toggleConnection={toggleConnection}
               connectedTo={connectedTo}
               connecting={connecting}
-            ></Users>
+            />
+            <MessageBox
+              messages={messages}
+              connectedTo={connectedTo}
+              message={message}
+              setMessage={setMessage}
+              sendMessage={sendMessage}
+              name={name}
+            />
           </Grid>
         </Fragment>
       )) || (
