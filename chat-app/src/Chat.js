@@ -11,6 +11,10 @@ import {
 import SweetAlert from "react-bootstrap-sweetalert";
 import Users from "./Users";
 
+const configuration = {
+  iceServers: [{ url: "stun:stun.1.google.com:19302" }],
+};
+
 const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
   const webSocket = useRef(null);
   const [socketOpened, setSocketOpened] = useState(false);
@@ -22,7 +26,9 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
   const [users, setUsers] = useState([]);
   const [connectedTo, setConnectedTo] = useState("");
   const [connecting, setConnecting] = useState(false);
+  const [messages, setMessages] = useState({});
   const connectedRef = useRef();
+  const messagesRef = useRef();
 
   const closeAlert = () => {
     setAlert(null);
@@ -40,6 +46,23 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
     });
   };
 
+  const handleDataChannelMessageReceived = ({ data }) => {
+    const message = JSON.parse(data);
+    const { name: user } = message;
+    let messages = messagesRef.current;
+    let userMessages = messages[user];
+    if (userMessages) {
+      userMessages = [...userMessages, message];
+      let newMessages = Object.assign({}, messages, { [user]: userMessages });
+      messagesRef.current = newMessages;
+      setMessages(newMessages);
+    } else {
+      let newMessages = Object.assign({}, messages, { [user]: [message] });
+      messagesRef.current = newMessages;
+      setMessages(newMessages);
+    }
+  };
+
   const onLogin = ({ success, message, users: loggedIn }) => {
     setLoggingIn(false);
     if (success) {
@@ -55,6 +78,27 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
       );
       setIsLoggedIn(true);
       setUsers(loggedIn);
+      let localConnection = new RTCPeerConnection(configuration);
+      // When the browser finds an ice candidate we send it to the other peer
+      localConnection.onicecandidate = ({ candidate }) => {
+        let connectedTo = connectedRef.current;
+        if (candidate && !!connectedTo) {
+          send({
+            name: connectedTo,
+            type: "candidate",
+            candidate,
+          });
+        }
+      };
+      localConnection.ondatachannel = (event) => {
+        let receivedChannel = event.channel;
+        receivedChannel.onopen = () => {
+          console.log("Data channel is open and ready to be used.");
+        };
+        receivedChannel.onmessage = handleDataChannelMessageReceived;
+        updateChannel(receivedChannel);
+      };
+      updateConnection(localConnection);
     } else {
       setAlert(
         <SweetAlert
@@ -70,6 +114,49 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
     }
   };
 
+  const handleConnection = (name) => {
+    let dataChannel = connection.createDataChannel("messenger");
+    dataChannel.onerror = (error) => {
+      setAlert(
+        <SweetAlert
+          warning
+          confirmBtnBsStyle="danger"
+          title="Failed"
+          onConfirm={closeAlert}
+          onCancel={closeAlert}
+        >
+          An error has ocurred.
+        </SweetAlert>
+      );
+    };
+    dataChannel.onmessage = handleDataChannelMessageReceived;
+    updateChannel(dataChannel);
+
+    connection
+      .createOffer()
+      .then((offer) => connection.setLocalDescription(offer))
+      .then(() =>
+        send({
+          type: "offer",
+          offer: connection.localDescription,
+          name,
+        })
+      )
+      .catch((e) =>
+        setAlert(
+          <SweetAlert
+            warning
+            confirmBtnBsStyle="danger"
+            title="Failed"
+            onConfirm={closeAlert}
+            onCancel={closeAlert}
+          >
+            An error has ocurred.
+          </SweetAlert>
+        )
+      );
+  };
+
   const toggleConnection = (userName) => {
     if (connectedRef.current === userName) {
       setConnecting(true);
@@ -80,9 +167,43 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
       setConnecting(true);
       setConnecting(userName);
       connectedRef.current = userName;
-      //handleConnection(userName);
+      handleConnection(userName);
       setConnecting(false);
     }
+  };
+
+  const onOffer = ({ offer, name }) => {
+    setConnectedTo(name);
+    connectedRef.current = name;
+    connection
+      .setRemoteDescription(new RTCSessionDescription(offer))
+      .then(() => connection.createAnswer())
+      .then((answer) => connection.setLocalDescription(answer))
+      .then(() =>
+        send({ type: "answer", answer: connection.localDescription, name })
+      )
+      .catch((e) => {
+        console.log({ e });
+        setAlert(
+          <SweetAlert
+            warning
+            confirmBtnBsStyle="danger"
+            title="Failed"
+            onConfirm={closeAlert}
+            onCancel={closeAlert}
+          >
+            An error has ocurred.
+          </SweetAlert>
+        );
+      });
+  };
+
+  const onAnswer = ({ answer }) => {
+    connection.setRemoteDescription(new RTCSessionDescription(answer));
+  };
+
+  const onCandidate = ({ candidate }) => {
+    connection.addIceCandidate(new RTCIceCandidate(candidate));
   };
 
   useEffect(() => {
@@ -106,6 +227,15 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
           break;
         case "login":
           onLogin(data);
+          break;
+        case "offer":
+          onOffer(data);
+          break;
+        case "answer":
+          onAnswer(data);
+          break;
+        case "candidate":
+          onCandidate(data);
           break;
         default:
           break;
