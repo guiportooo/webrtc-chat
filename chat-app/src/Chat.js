@@ -76,47 +76,6 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
     }
   }, [socketMessages]);
 
-  const closeAlert = () => {
-    setAlert(null);
-  };
-
-  const updateUsers = ({ user }) => {
-    setUsers((prev) => [...prev, user]);
-  };
-
-  const removeUser = ({ user }) => {
-    setUsers((prev) => prev.filter((u) => u.userName !== user.userName));
-  };
-
-  const send = (data) => {
-    webSocket.current.send(JSON.stringify(data));
-  };
-
-  const handleLogin = () => {
-    setLoggingIn(true);
-    send({
-      type: "login",
-      name,
-    });
-  };
-
-  const handleDataChannelMessageReceived = ({ data }) => {
-    const message = JSON.parse(data);
-    const { name: user } = message;
-    let messages = messagesRef.current ? messagesRef.current : {};
-    let userMessages = messages[user];
-    if (userMessages) {
-      userMessages = [...userMessages, message];
-      let newMessages = Object.assign({}, messages, { [user]: userMessages });
-      messagesRef.current = newMessages;
-      setMessages(newMessages);
-    } else {
-      let newMessages = Object.assign({}, messages, { [user]: [message] });
-      messagesRef.current = newMessages;
-      setMessages(newMessages);
-    }
-  };
-
   const onLogin = ({ success, message, users: loggedIn }) => {
     setLoggingIn(false);
     if (success) {
@@ -169,6 +128,53 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
     }
   };
 
+  const onOffer = ({ offer, name }) => {
+    setConnectedTo(name);
+    connectedRef.current = name;
+
+    connection
+      .setRemoteDescription(new RTCSessionDescription(offer))
+      .then(() => connection.createAnswer())
+      .then((answer) => connection.setLocalDescription(answer))
+      .then(() =>
+        send({ type: "answer", answer: connection.localDescription, name })
+      )
+      .catch((e) => {
+        console.log({ e });
+        setAlert(
+          <SweetAlert
+            warning
+            confirmBtnBsStyle="danger"
+            title="Failed"
+            onConfirm={closeAlert}
+            onCancel={closeAlert}
+          >
+            An error has ocurred.
+          </SweetAlert>
+        );
+      });
+  };
+
+  const onAnswer = ({ answer }) => {
+    connection.setRemoteDescription(new RTCSessionDescription(answer));
+  };
+
+  const onCandidate = ({ candidate }) => {
+    connection.addIceCandidate(new RTCIceCandidate(candidate));
+  };
+
+  const send = (data) => {
+    webSocket.current.send(JSON.stringify(data));
+  };
+
+  const handleLogin = () => {
+    setLoggingIn(true);
+    send({
+      type: "login",
+      name,
+    });
+  };
+
   const handleConnection = (name) => {
     let dataChannel = connection.createDataChannel("messenger");
     dataChannel.onerror = (error) => {
@@ -212,6 +218,23 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
       );
   };
 
+  const handleDataChannelMessageReceived = ({ data }) => {
+    const message = JSON.parse(data);
+    const { name: user } = message;
+    let messages = messagesRef.current ? messagesRef.current : {};
+    let userMessages = messages[user];
+    if (userMessages) {
+      userMessages = [...userMessages, message];
+      let newMessages = Object.assign({}, messages, { [user]: userMessages });
+      messagesRef.current = newMessages;
+      setMessages(newMessages);
+    } else {
+      let newMessages = Object.assign({}, messages, { [user]: [message] });
+      messagesRef.current = newMessages;
+      setMessages(newMessages);
+    }
+  };
+
   const toggleConnection = (userName) => {
     if (connectedRef.current === userName) {
       setConnecting(true);
@@ -225,41 +248,6 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
       handleConnection(userName);
       setConnecting(false);
     }
-  };
-
-  const onOffer = ({ offer, name }) => {
-    setConnectedTo(name);
-    connectedRef.current = name;
-
-    connection
-      .setRemoteDescription(new RTCSessionDescription(offer))
-      .then(() => connection.createAnswer())
-      .then((answer) => connection.setLocalDescription(answer))
-      .then(() =>
-        send({ type: "answer", answer: connection.localDescription, name })
-      )
-      .catch((e) => {
-        console.log({ e });
-        setAlert(
-          <SweetAlert
-            warning
-            confirmBtnBsStyle="danger"
-            title="Failed"
-            onConfirm={closeAlert}
-            onCancel={closeAlert}
-          >
-            An error has ocurred.
-          </SweetAlert>
-        );
-      });
-  };
-
-  const onAnswer = ({ answer }) => {
-    connection.setRemoteDescription(new RTCSessionDescription(answer));
-  };
-
-  const onCandidate = ({ candidate }) => {
-    connection.addIceCandidate(new RTCIceCandidate(candidate));
   };
 
   const sendMessage = () => {
@@ -284,6 +272,18 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
     }
     channel.send(JSON.stringify(text));
     setMessage("");
+  };
+
+  const closeAlert = () => {
+    setAlert(null);
+  };
+
+  const updateUsers = ({ user }) => {
+    setUsers((prev) => [...prev, user]);
+  };
+
+  const removeUser = ({ user }) => {
+    setUsers((prev) => prev.filter((u) => u.userName !== user.userName));
   };
 
   return (
