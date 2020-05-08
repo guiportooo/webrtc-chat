@@ -1,4 +1,5 @@
 import React, { useState, createContext } from "react";
+import { Button } from "semantic-ui-react";
 import Container from "./Container";
 
 const ConnectionContext = createContext({
@@ -14,6 +15,7 @@ const ChannelContext = createContext({
 const App = () => {
   const [connection, setConnection] = useState(null);
   const [channel, setChannel] = useState(null);
+  const [type, setType] = useState("");
 
   const updateConnection = (conn) => {
     setConnection(conn);
@@ -23,10 +25,19 @@ const App = () => {
     setChannel(chn);
   };
 
-  return (
+  return type === "" ? (
+    <>
+      <Button onClick={() => setType("admin")} color="teal">
+        Enter as Admin
+      </Button>
+      <Button onClick={() => setType("user")} color="teal">
+        Enter as User
+      </Button>
+    </>
+  ) : (
     <ConnectionContext.Provider value={{ connection, updateConnection }}>
       <ChannelContext.Provider value={{ channel, updateChannel }}>
-        <Container />
+        <Container type={type} />
       </ChannelContext.Provider>
     </ConnectionContext.Provider>
   );

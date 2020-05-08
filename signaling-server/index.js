@@ -14,20 +14,16 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 let users = {};
+let rooms = {};
 
 const sendTo = (connection, message) => {
   connection.send(JSON.stringify(message));
 };
 
-const sendToAll = (clients, type, { id, name: userName }) => {
+const sendToRoom = (clients, room, message) => {
   Object.values(clients).forEach((client) => {
-    if (client.name !== userName) {
-      client.send(
-        JSON.stringify({
-          type,
-          user: { id, userName },
-        })
-      );
+    if (client.room === room) {
+      client.send(JSON.stringify(message));
     }
   });
 };
@@ -43,82 +39,92 @@ wss.on("connection", (ws) => {
       data = {};
     }
 
-    const { type, name, offer, answer, candidate } = data;
+    const { type, room, offer, answer, candidate } = data;
     // Handle message by type
     switch (type) {
-      // When a user tries to login
-      case "login":
-        // Check if username is available
-        if (users[name]) {
+      case "enter":
+        const usersInTheRoom = Object.values(users).filter(
+          (u) => u.room === room
+        ).length;
+
+        if (usersInTheRoom >= 2) {
           sendTo(ws, {
-            type: "login",
-            success: false,
-            message: "Username is unavailable",
+            type: "error",
+            message: `Room ${room} is full!`,
           });
-        } else {
-          const id = uuid();
-          const loggedIn = Object.values(
-            users
-          ).map(({ id, name: userName }) => ({ id, userName }));
-          users[name] = ws;
-          ws.name = name;
-          ws.id = id;
-          sendTo(ws, {
-            type: "login",
-            success: true,
-            users: loggedIn,
-          });
-          sendToAll(users, "updateUsers", ws);
+          break;
         }
+
+        // Create room if it does not exist
+        if (usersInTheRoom === 0) {
+          rooms[room] = room;
+        }
+
+        const id = uuid();
+        ws.id = id;
+        ws.room = room;
+        users[id] = ws;
+
+        sendTo(ws, {
+          type: "enter",
+          success: true,
+          room,
+        });
+
+        sendToRoom(users, room, {
+          type: "updateRoom",
+          count: Object.keys(users).length,
+        });
         break;
       case "offer":
-        //Check if user to send offer exists
-        const offerRecipient = users[name];
-        if (!!offerRecipient) {
-          sendTo(offerRecipient, {
+        //Check if room to send offer exists
+        if (!!rooms[room]) {
+          sendToRoom(users, room, {
             type: "offer",
             offer,
-            name: ws.name,
           });
         } else {
           sendTo(ws, {
             type: "error",
-            message: `User ${name} does not exist!`,
+            message: `Room ${room} does not exist!`,
           });
         }
         break;
       case "answer":
-        //Check if user to send answer exists
-        const answerRecipient = users[name];
-        if (!!answerRecipient) {
-          sendTo(answerRecipient, {
+        //Check if room to send answer exists
+        if (!!rooms[room]) {
+          sendToRoom(users, room, {
             type: "answer",
             answer,
           });
         } else {
           sendTo(ws, {
             type: "error",
-            message: `User ${name} does not exist!`,
+            message: `Room ${room} does not exist!`,
           });
         }
         break;
       case "candidate":
-        //Check if user to send candidate exists
-        const candidateRecipient = users[name];
-        if (!!candidateRecipient) {
-          sendTo(candidateRecipient, {
+        //Check if room to send candidate exists
+        if (!!rooms[room]) {
+          sendToRoom(users, room, {
             type: "candidate",
             candidate,
           });
         } else {
           sendTo(ws, {
             type: "error",
-            message: `User ${name} does not exist!`,
+            message: `Room ${room} does not exist!`,
           });
         }
         break;
-      case "logout":
-        sendToAll(users, "logout", ws);
+      case "leave":
+        delete users[ws.id];
+
+        sendToRoom(users, room, {
+          type: "updateRoom",
+          count: Object.keys(users).length,
+        });
         break;
       default:
         sendTo(ws, {
@@ -128,8 +134,7 @@ wss.on("connection", (ws) => {
     }
   });
   ws.on("close", () => {
-    delete users[ws.name];
-    sendToAll(users, "logout", ws);
+    delete users[ws.id];
   });
   // Send immediate feedback to the incoming connection
   ws.send(

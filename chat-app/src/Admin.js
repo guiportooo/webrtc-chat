@@ -10,27 +10,25 @@ import {
 } from "semantic-ui-react";
 import SweetAlert from "react-bootstrap-sweetalert";
 import { format } from "date-fns";
-import Users from "./Users";
 import MessageBox from "./MessageBox";
 
 const configuration = {
   iceServers: [{ url: "stun:stun.1.google.com:19302" }],
 };
 
-const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
+const Admin = ({ connection, updateConnection, channel, updateChannel }) => {
   const webSocket = useRef(null);
   const [socketOpened, setSocketOpened] = useState(false);
   const [socketMessages, setSocketMessages] = useState([]);
   const [alert, setAlert] = useState(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [name, setName] = useState("");
+  const [room, setRoom] = useState("");
   const [loggingIn, setLoggingIn] = useState(false);
-  const [users, setUsers] = useState([]);
-  const [connectedTo, setConnectedTo] = useState("");
+  const [count, setCount] = useState([]);
+  const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [messages, setMessages] = useState({});
   const [message, setMessage] = useState("");
-  const connectedRef = useRef();
   const messagesRef = useRef();
 
   useEffect(() => {
@@ -52,17 +50,11 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
         case "connect":
           setSocketOpened(true);
           break;
-        case "login":
-          onLogin(data);
+        case "enter":
+          onEnter(data);
           break;
-        case "updateUsers":
-          updateUsers(data);
-          break;
-        case "removeUser":
-          removeUser(data);
-          break;
-        case "offer":
-          onOffer(data);
+        case "updateRoom":
+          updateRoom(data);
           break;
         case "answer":
           onAnswer(data);
@@ -76,7 +68,15 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
     }
   }, [socketMessages]);
 
-  const onLogin = ({ success, message, users: loggedIn }) => {
+  const send = (data) => {
+    webSocket.current.send(JSON.stringify(data));
+  };
+
+  const closeAlert = () => {
+    setAlert(null);
+  };
+
+  const onEnter = ({ success, message, room }) => {
     setLoggingIn(false);
     if (success) {
       setAlert(
@@ -90,17 +90,15 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
         </SweetAlert>
       );
       setIsLoggedIn(true);
-      setUsers(loggedIn);
+      setRoom(room);
       let localConnection = new RTCPeerConnection(configuration);
       // When the browser finds an ice candidate we send it to the other peer
       localConnection.onicecandidate = ({ candidate }) => {
-        let connectedTo = connectedRef.current;
-
-        if (candidate && !!connectedTo) {
+        if (candidate) {
           send({
-            name: connectedTo,
             type: "candidate",
             candidate,
+            room,
           });
         }
       };
@@ -128,34 +126,12 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
     }
   };
 
-  const onOffer = ({ offer, name }) => {
-    setConnectedTo(name);
-    connectedRef.current = name;
-
-    connection
-      .setRemoteDescription(new RTCSessionDescription(offer))
-      .then(() => connection.createAnswer())
-      .then((answer) => connection.setLocalDescription(answer))
-      .then(() =>
-        send({ type: "answer", answer: connection.localDescription, name })
-      )
-      .catch((e) => {
-        console.log({ e });
-        setAlert(
-          <SweetAlert
-            warning
-            confirmBtnBsStyle="danger"
-            title="Failed"
-            onConfirm={closeAlert}
-            onCancel={closeAlert}
-          >
-            An error has ocurred.
-          </SweetAlert>
-        );
-      });
+  const updateRoom = ({ count }) => {
+    setCount(count);
   };
 
   const onAnswer = ({ answer }) => {
+    setConnected(true);
     connection.setRemoteDescription(new RTCSessionDescription(answer));
   };
 
@@ -163,19 +139,23 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
     connection.addIceCandidate(new RTCIceCandidate(candidate));
   };
 
-  const send = (data) => {
-    webSocket.current.send(JSON.stringify(data));
-  };
-
-  const handleLogin = () => {
+  const handleEnter = () => {
     setLoggingIn(true);
     send({
-      type: "login",
-      name,
+      type: "enter",
+      room,
     });
   };
 
-  const handleConnection = (name) => {
+  const toggleConnection = () => {
+    if (!connected) {
+      setConnecting(true);
+      handleConnection();
+      setConnecting(false);
+    }
+  };
+
+  const handleConnection = () => {
     let dataChannel = connection.createDataChannel("messenger");
     dataChannel.onerror = (error) => {
       setAlert(
@@ -200,7 +180,7 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
         send({
           type: "offer",
           offer: connection.localDescription,
-          name,
+          room,
         })
       )
       .catch((e) =>
@@ -218,72 +198,36 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
       );
   };
 
-  const handleDataChannelMessageReceived = ({ data }) => {
-    const message = JSON.parse(data);
-    const { name: user } = message;
-    let messages = messagesRef.current ? messagesRef.current : {};
-    let userMessages = messages[user];
-    if (userMessages) {
-      userMessages = [...userMessages, message];
-      let newMessages = Object.assign({}, messages, { [user]: userMessages });
-      messagesRef.current = newMessages;
-      setMessages(newMessages);
-    } else {
-      let newMessages = Object.assign({}, messages, { [user]: [message] });
-      messagesRef.current = newMessages;
-      setMessages(newMessages);
-    }
-  };
-
-  const toggleConnection = (userName) => {
-    if (connectedRef.current === userName) {
-      setConnecting(true);
-      setConnectedTo("");
-      connectedRef.current = "";
-      setConnecting(false);
-    } else {
-      setConnecting(true);
-      setConnecting(userName);
-      connectedRef.current = userName;
-      handleConnection(userName);
-      setConnecting(false);
-    }
-  };
-
   const sendMessage = () => {
     const time = format(new Date(), "yyyy-MM-dd'T'HH:mm:ss.SSSxxx");
-    let text = { time, message, name };
-    let messages = messagesRef.current ? messagesRef.current : {};
-    let connectedTo = connectedRef.current;
-    let userMessages = messages[connectedTo];
-    if (messages[connectedTo]) {
-      userMessages = [...userMessages, text];
-      let newMessages = Object.assign({}, messages, {
-        [connectedTo]: userMessages,
-      });
-      messagesRef.current = newMessages;
-      setMessages(newMessages);
-    } else {
-      userMessages = Object.assign({}, messages, {
-        [connectedTo]: [text],
-      });
-      messagesRef.current = userMessages;
-      setMessages(userMessages);
-    }
+    let text = { time, message, name: "Admin" };
+    updateMessages(text);
     channel.send(JSON.stringify(text));
     setMessage("");
   };
 
-  const closeAlert = () => {
-    setAlert(null);
+  const handleDataChannelMessageReceived = ({ data }) => {
+    const text = JSON.parse(data);
+    updateMessages(text);
   };
 
-  const updateUsers = ({ user }) => {
-    setUsers((prev) => [...prev, user]);
-  };
-
-  const removeUser = ({ user }) => {
-    setUsers((prev) => prev.filter((u) => u.userName !== user.userName));
+  const updateMessages = (text) => {
+    const { name } = text;
+    let nameMessages = messages[name];
+    if (messages[name]) {
+      nameMessages = [...nameMessages, text];
+      let newMessages = Object.assign({}, messages, {
+        [name]: nameMessages,
+      });
+      messagesRef.current = newMessages;
+      setMessages(newMessages);
+    } else {
+      nameMessages = Object.assign({}, messages, {
+        [name]: [text],
+      });
+      messagesRef.current = nameMessages;
+      setMessages(nameMessages);
+    }
   };
 
   return (
@@ -302,15 +246,15 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
                   fluid
                   disabled={loggingIn}
                   type="text"
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Username..."
+                  onChange={(e) => setRoom(e.target.value)}
+                  placeholder="Room..."
                   action
                 >
                   <input />
                   <Button
                     color="teal"
-                    disabled={!name || loggingIn}
-                    onClick={handleLogin}
+                    disabled={!room || loggingIn}
+                    onClick={handleEnter}
                   >
                     <Icon name="sign-in" />
                     Login
@@ -318,25 +262,39 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
                 </Input>
               )) || (
                 <Segment raised textAlign="center" color="olive">
-                  Logged In as: {name}
+                  Logged In the Room: {room}
                 </Segment>
               )}
             </Grid.Column>
           </Grid>
           <Grid>
-            <Users
-              users={users}
-              toggleConnection={toggleConnection}
-              connectedTo={connectedTo}
-              connecting={connecting}
-            />
+            {isLoggedIn && room && (
+              <Grid.Column width={5}>
+                <Segment placeholder>
+                  <Header icon>
+                    <Icon name="user" />
+                    Number of users in the room: {count}
+                  </Header>
+                </Segment>
+                <Button
+                  color="teal"
+                  onClick={() => {
+                    toggleConnection();
+                  }}
+                  disabled={!!connected}
+                  loading={connecting}
+                >
+                  {connected ? "Disconnect" : "Connect"}
+                </Button>
+              </Grid.Column>
+            )}
             <MessageBox
               messages={messages}
-              connectedTo={connectedTo}
+              connectedTo="User"
               message={message}
               setMessage={setMessage}
               sendMessage={sendMessage}
-              name={name}
+              name="Admin"
             />
           </Grid>
         </Fragment>
@@ -349,4 +307,4 @@ const Chat = ({ connection, updateConnection, channel, updateChannel }) => {
   );
 };
 
-export default Chat;
+export default Admin;

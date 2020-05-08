@@ -1,20 +1,31 @@
 import React from "react";
 import { ConnectionConsumer, ChannelConsumer } from "./App";
-import Chat from "./Chat";
+import Admin from "./Admin";
+import User from "./User";
 
-const Container = () => {
+const Container = ({ type }) => {
+  console.log("container:type", type);
   return (
     <ConnectionConsumer>
       {({ connection, updateConnection }) => (
         <ChannelConsumer>
-          {({ channel, updateChannel }) => (
-            <Chat
-              connection={connection}
-              updateConnection={updateConnection}
-              channel={channel}
-              updateChannel={updateChannel}
-            ></Chat>
-          )}
+          {({ channel, updateChannel }) =>
+            type === "admin" ? (
+              <Admin
+                connection={connection}
+                updateConnection={updateConnection}
+                channel={channel}
+                updateChannel={updateChannel}
+              ></Admin>
+            ) : (
+              <User
+                connection={connection}
+                updateConnection={updateConnection}
+                channel={channel}
+                updateChannel={updateChannel}
+              ></User>
+            )
+          }
         </ChannelConsumer>
       )}
     </ConnectionConsumer>
