@@ -33,10 +33,11 @@ const MessageBox = ({
             }
           />
           <Card.Content>
-            {!!connectedTo && messages[connectedTo] ? (
+            {!!connectedTo && messages ? (
               <Comment.Group>
-                {messages[connectedTo].map(
-                  ({ name: sender, message: text, time }) => (
+                {Object.values(messages)
+                  .flat()
+                  .map(({ name: sender, message: text, time }) => (
                     <Comment key={`msg-${name}-${time}`}>
                       <Comment.Avatar src={avatar} />
                       <Comment.Content>
@@ -51,8 +52,7 @@ const MessageBox = ({
                         <Comment.Text>{text}</Comment.Text>
                       </Comment.Content>
                     </Comment>
-                  )
-                )}
+                  ))}
               </Comment.Group>
             ) : (
               <Segment placeholder>

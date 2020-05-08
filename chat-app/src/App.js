@@ -27,11 +27,11 @@ const App = () => {
 
   return type === "" ? (
     <>
-      <Button onClick={() => setType("admin")} color="teal">
-        Enter as Admin
+      <Button onClick={() => setType("host")} color="teal">
+        Enter as Host
       </Button>
-      <Button onClick={() => setType("user")} color="teal">
-        Enter as User
+      <Button onClick={() => setType("guest")} color="teal">
+        Enter as Guest
       </Button>
     </>
   ) : (

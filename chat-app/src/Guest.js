@@ -16,7 +16,7 @@ const configuration = {
   iceServers: [{ url: "stun:stun.1.google.com:19302" }],
 };
 
-const Admin = ({ connection, updateConnection, channel, updateChannel }) => {
+const Guest = ({ connection, updateConnection, channel, updateChannel }) => {
   const webSocket = useRef(null);
   const [socketOpened, setSocketOpened] = useState(false);
   const [socketMessages, setSocketMessages] = useState([]);
@@ -26,10 +26,11 @@ const Admin = ({ connection, updateConnection, channel, updateChannel }) => {
   const [loggingIn, setLoggingIn] = useState(false);
   const [count, setCount] = useState([]);
   const [connected, setConnected] = useState(false);
-  const [connecting, setConnecting] = useState(false);
-  const [messages, setMessages] = useState({});
+  const [messages, setMessages] = useState([]);
   const [message, setMessage] = useState("");
   const messagesRef = useRef();
+  const userType = "Guest";
+  const connectedTo = "Host";
 
   useEffect(() => {
     webSocket.current = new WebSocket("ws://localhost:9000");
@@ -56,8 +57,8 @@ const Admin = ({ connection, updateConnection, channel, updateChannel }) => {
         case "updateRoom":
           updateRoom(data);
           break;
-        case "answer":
-          onAnswer(data);
+        case "offer":
+          onOffer(data);
           break;
         case "candidate":
           onCandidate(data);
@@ -98,7 +99,7 @@ const Admin = ({ connection, updateConnection, channel, updateChannel }) => {
           send({
             type: "candidate",
             candidate,
-            room,
+            info: { room },
           });
         }
       };
@@ -130,60 +131,21 @@ const Admin = ({ connection, updateConnection, channel, updateChannel }) => {
     setCount(count);
   };
 
-  const onAnswer = ({ answer }) => {
+  const onOffer = ({ offer }) => {
     setConnected(true);
-    connection.setRemoteDescription(new RTCSessionDescription(answer));
-  };
-
-  const onCandidate = ({ candidate }) => {
-    connection.addIceCandidate(new RTCIceCandidate(candidate));
-  };
-
-  const handleEnter = () => {
-    setLoggingIn(true);
-    send({
-      type: "enter",
-      room,
-    });
-  };
-
-  const toggleConnection = () => {
-    if (!connected) {
-      setConnecting(true);
-      handleConnection();
-      setConnecting(false);
-    }
-  };
-
-  const handleConnection = () => {
-    let dataChannel = connection.createDataChannel("messenger");
-    dataChannel.onerror = (error) => {
-      setAlert(
-        <SweetAlert
-          warning
-          confirmBtnBsStyle="danger"
-          title="Failed"
-          onConfirm={closeAlert}
-          onCancel={closeAlert}
-        >
-          An error has ocurred.
-        </SweetAlert>
-      );
-    };
-    dataChannel.onmessage = handleDataChannelMessageReceived;
-    updateChannel(dataChannel);
 
     connection
-      .createOffer()
-      .then((offer) => connection.setLocalDescription(offer))
+      .setRemoteDescription(new RTCSessionDescription(offer))
+      .then(() => connection.createAnswer())
+      .then((answer) => connection.setLocalDescription(answer))
       .then(() =>
         send({
-          type: "offer",
-          offer: connection.localDescription,
-          room,
+          type: "answer",
+          answer: connection.localDescription,
+          info: { room },
         })
       )
-      .catch((e) =>
+      .catch((e) => {
         setAlert(
           <SweetAlert
             warning
@@ -194,13 +156,25 @@ const Admin = ({ connection, updateConnection, channel, updateChannel }) => {
           >
             An error has ocurred.
           </SweetAlert>
-        )
-      );
+        );
+      });
+  };
+
+  const onCandidate = ({ candidate }) => {
+    connection.addIceCandidate(new RTCIceCandidate(candidate));
+  };
+
+  const handleEnter = () => {
+    setLoggingIn(true);
+    send({
+      type: "enter",
+      info: { room, userType },
+    });
   };
 
   const sendMessage = () => {
     const time = format(new Date(), "yyyy-MM-dd'T'HH:mm:ss.SSSxxx");
-    let text = { time, message, name: "Admin" };
+    let text = { time, message, name: userType };
     updateMessages(text);
     channel.send(JSON.stringify(text));
     setMessage("");
@@ -213,6 +187,7 @@ const Admin = ({ connection, updateConnection, channel, updateChannel }) => {
 
   const updateMessages = (text) => {
     const { name } = text;
+    let messages = messagesRef.current ? messagesRef.current : {};
     let nameMessages = messages[name];
     if (messages[name]) {
       nameMessages = [...nameMessages, text];
@@ -276,25 +251,16 @@ const Admin = ({ connection, updateConnection, channel, updateChannel }) => {
                     Number of users in the room: {count}
                   </Header>
                 </Segment>
-                <Button
-                  color="teal"
-                  onClick={() => {
-                    toggleConnection();
-                  }}
-                  disabled={!!connected}
-                  loading={connecting}
-                >
-                  {connected ? "Disconnect" : "Connect"}
-                </Button>
+                <Segment>{connected ? "Connected" : "Disconnected"}</Segment>
               </Grid.Column>
             )}
             <MessageBox
               messages={messages}
-              connectedTo="User"
+              connectedTo={connectedTo}
               message={message}
               setMessage={setMessage}
               sendMessage={sendMessage}
-              name="Admin"
+              name={userType}
             />
           </Grid>
         </Fragment>
@@ -307,4 +273,4 @@ const Admin = ({ connection, updateConnection, channel, updateChannel }) => {
   );
 };
 
-export default Admin;
+export default Guest;

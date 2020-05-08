@@ -13,18 +13,16 @@ const server = http.createServer(app);
 // Initialize the Websocket server instance
 const wss = new WebSocket.Server({ server });
 
-let users = {};
 let rooms = {};
 
 const sendTo = (connection, message) => {
   connection.send(JSON.stringify(message));
 };
 
-const sendToRoom = (clients, room, message) => {
-  Object.values(clients).forEach((client) => {
-    if (client.room === room) {
-      client.send(JSON.stringify(message));
-    }
+const sendToRoom = (room, message) => {
+  const users = rooms[room].users;
+  Object.values(users).forEach((user) => {
+    user.send(JSON.stringify(message));
   });
 };
 
@@ -39,31 +37,42 @@ wss.on("connection", (ws) => {
       data = {};
     }
 
-    const { type, room, offer, answer, candidate } = data;
+    const {
+      type,
+      info: { room, userType },
+      offer,
+      answer,
+      candidate,
+    } = data;
+
+    let users = {};
+
     // Handle message by type
     switch (type) {
       case "enter":
-        const usersInTheRoom = Object.values(users).filter(
-          (u) => u.room === room
-        ).length;
+        // Create room if it does not exist
+        if (!rooms[room]) {
+          rooms[room] = {
+            users,
+          };
+        }
 
-        if (usersInTheRoom >= 2) {
+        users = rooms[room].users;
+
+        if (users[userType]) {
           sendTo(ws, {
-            type: "error",
+            type: "enter",
+            success: false,
             message: `Room ${room} is full!`,
           });
           break;
         }
 
-        // Create room if it does not exist
-        if (usersInTheRoom === 0) {
-          rooms[room] = room;
-        }
-
         const id = uuid();
         ws.id = id;
         ws.room = room;
-        users[id] = ws;
+        ws.userType = userType;
+        users[userType] = ws;
 
         sendTo(ws, {
           type: "enter",
@@ -71,7 +80,7 @@ wss.on("connection", (ws) => {
           room,
         });
 
-        sendToRoom(users, room, {
+        sendToRoom(room, {
           type: "updateRoom",
           count: Object.keys(users).length,
         });
@@ -79,7 +88,7 @@ wss.on("connection", (ws) => {
       case "offer":
         //Check if room to send offer exists
         if (!!rooms[room]) {
-          sendToRoom(users, room, {
+          sendToRoom(room, {
             type: "offer",
             offer,
           });
@@ -93,7 +102,7 @@ wss.on("connection", (ws) => {
       case "answer":
         //Check if room to send answer exists
         if (!!rooms[room]) {
-          sendToRoom(users, room, {
+          sendToRoom(room, {
             type: "answer",
             answer,
           });
@@ -107,7 +116,7 @@ wss.on("connection", (ws) => {
       case "candidate":
         //Check if room to send candidate exists
         if (!!rooms[room]) {
-          sendToRoom(users, room, {
+          sendToRoom(room, {
             type: "candidate",
             candidate,
           });
@@ -119,9 +128,10 @@ wss.on("connection", (ws) => {
         }
         break;
       case "leave":
-        delete users[ws.id];
+        users = rooms[room].users;
+        delete users[ws.userType];
 
-        sendToRoom(users, room, {
+        sendToRoom(room, {
           type: "updateRoom",
           count: Object.keys(users).length,
         });
@@ -134,7 +144,14 @@ wss.on("connection", (ws) => {
     }
   });
   ws.on("close", () => {
-    delete users[ws.id];
+    user = Object.values(rooms)
+      .map(({ users }) => users)
+      .find((user) => user.id === ws.id);
+
+    if (user) {
+      let users = rooms[user.room].users;
+      delete users[ws.userType];
+    }
   });
   // Send immediate feedback to the incoming connection
   ws.send(

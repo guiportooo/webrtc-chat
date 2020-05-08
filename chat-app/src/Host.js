@@ -16,7 +16,7 @@ const configuration = {
   iceServers: [{ url: "stun:stun.1.google.com:19302" }],
 };
 
-const User = ({ connection, updateConnection, channel, updateChannel }) => {
+const Host = ({ connection, updateConnection, channel, updateChannel }) => {
   const webSocket = useRef(null);
   const [socketOpened, setSocketOpened] = useState(false);
   const [socketMessages, setSocketMessages] = useState([]);
@@ -26,13 +26,17 @@ const User = ({ connection, updateConnection, channel, updateChannel }) => {
   const [loggingIn, setLoggingIn] = useState(false);
   const [count, setCount] = useState([]);
   const [connected, setConnected] = useState(false);
-  const [messages, setMessages] = useState([]);
+  const [connecting, setConnecting] = useState(false);
+  const [messages, setMessages] = useState({});
   const [message, setMessage] = useState("");
   const messagesRef = useRef();
+  const userType = "Host";
+  const connectedTo = "Guest";
 
   useEffect(() => {
     webSocket.current = new WebSocket("ws://localhost:9000");
     webSocket.current.onmessage = (message) => {
+      console.log("onmessage", message);
       const data = JSON.parse(message.data);
       setSocketMessages((prev) => [...prev, data]);
     };
@@ -55,8 +59,8 @@ const User = ({ connection, updateConnection, channel, updateChannel }) => {
         case "updateRoom":
           updateRoom(data);
           break;
-        case "offer":
-          onOffer(data);
+        case "answer":
+          onAnswer(data);
           break;
         case "candidate":
           onCandidate(data);
@@ -97,7 +101,7 @@ const User = ({ connection, updateConnection, channel, updateChannel }) => {
           send({
             type: "candidate",
             candidate,
-            room,
+            info: { room },
           });
         }
       };
@@ -129,30 +133,9 @@ const User = ({ connection, updateConnection, channel, updateChannel }) => {
     setCount(count);
   };
 
-  const onOffer = ({ offer }) => {
+  const onAnswer = ({ answer }) => {
     setConnected(true);
-
-    connection
-      .setRemoteDescription(new RTCSessionDescription(offer))
-      .then(() => connection.createAnswer())
-      .then((answer) => connection.setLocalDescription(answer))
-      .then(() =>
-        send({ type: "answer", answer: connection.localDescription, room })
-      )
-      .catch((e) => {
-        console.log({ e });
-        setAlert(
-          <SweetAlert
-            warning
-            confirmBtnBsStyle="danger"
-            title="Failed"
-            onConfirm={closeAlert}
-            onCancel={closeAlert}
-          >
-            An error has ocurred.
-          </SweetAlert>
-        );
-      });
+    connection.setRemoteDescription(new RTCSessionDescription(answer));
   };
 
   const onCandidate = ({ candidate }) => {
@@ -163,13 +146,64 @@ const User = ({ connection, updateConnection, channel, updateChannel }) => {
     setLoggingIn(true);
     send({
       type: "enter",
-      room,
+      info: { room, userType },
     });
+  };
+
+  const toggleConnection = () => {
+    if (!connected) {
+      setConnecting(true);
+      handleConnection();
+      setConnecting(false);
+    }
+  };
+
+  const handleConnection = () => {
+    let dataChannel = connection.createDataChannel("messenger");
+    dataChannel.onerror = (error) => {
+      setAlert(
+        <SweetAlert
+          warning
+          confirmBtnBsStyle="danger"
+          title="Failed"
+          onConfirm={closeAlert}
+          onCancel={closeAlert}
+        >
+          An error has ocurred.
+        </SweetAlert>
+      );
+    };
+    dataChannel.onmessage = handleDataChannelMessageReceived;
+    updateChannel(dataChannel);
+
+    connection
+      .createOffer()
+      .then((offer) => connection.setLocalDescription(offer))
+      .then(() =>
+        send({
+          type: "offer",
+          offer: connection.localDescription,
+          info: { room },
+        })
+      )
+      .catch((e) =>
+        setAlert(
+          <SweetAlert
+            warning
+            confirmBtnBsStyle="danger"
+            title="Failed"
+            onConfirm={closeAlert}
+            onCancel={closeAlert}
+          >
+            An error has ocurred.
+          </SweetAlert>
+        )
+      );
   };
 
   const sendMessage = () => {
     const time = format(new Date(), "yyyy-MM-dd'T'HH:mm:ss.SSSxxx");
-    let text = { time, message, name: "User" };
+    let text = { time, message, name: userType };
     updateMessages(text);
     channel.send(JSON.stringify(text));
     setMessage("");
@@ -182,6 +216,7 @@ const User = ({ connection, updateConnection, channel, updateChannel }) => {
 
   const updateMessages = (text) => {
     const { name } = text;
+    let messages = messagesRef.current ? messagesRef.current : {};
     let nameMessages = messages[name];
     if (messages[name]) {
       nameMessages = [...nameMessages, text];
@@ -245,16 +280,25 @@ const User = ({ connection, updateConnection, channel, updateChannel }) => {
                     Number of users in the room: {count}
                   </Header>
                 </Segment>
-                <Segment>{connected ? "Connected" : "Disconnected"}</Segment>
+                <Button
+                  color="teal"
+                  onClick={() => {
+                    toggleConnection();
+                  }}
+                  disabled={!!connected}
+                  loading={connecting}
+                >
+                  {connected ? "Disconnect" : "Connect"}
+                </Button>
               </Grid.Column>
             )}
             <MessageBox
               messages={messages}
-              connectedTo="Admin"
+              connectedTo={connectedTo}
               message={message}
               setMessage={setMessage}
               sendMessage={sendMessage}
-              name="User"
+              name="Host"
             />
           </Grid>
         </Fragment>
@@ -267,4 +311,4 @@ const User = ({ connection, updateConnection, channel, updateChannel }) => {
   );
 };
 
-export default User;
+export default Host;
